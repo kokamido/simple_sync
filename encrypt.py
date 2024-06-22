@@ -41,11 +41,11 @@ def read_meta():
 
 
 def bytes_to_base64(data: bytes) -> str:
-    return base64.b64encode(data).decode(BASE64_ENCODING).replace("/", "э")
+    return base64.b64encode(data).decode(BASE64_ENCODING)
 
 
 def bytes_from_base64(data: str) -> bytes:
-    return base64.b64decode(data.replace("э", "/").encode(BASE64_ENCODING))
+    return base64.b64decode(data.encode(BASE64_ENCODING))
 
 
 def encrypt_file(key: bytes, source_path: str, destination_path: str) -> bytes:
