@@ -79,8 +79,8 @@ def decrypt_file(
         logger.warning(f'Overwriting "{destination_path}"')
     with open(source_path, "rb") as inp:
         with open(destination_path, "wb") as out:
-            ciphertext = cipher.decrypt_and_verify(inp.read(), tag)
-            out.write(ciphertext)
+            plain_text = cipher.decrypt_and_verify(inp.read(), tag)
+            out.write(plain_text)
     logger.debug(
         f'Decrypting file "{source_path}" finished. Destination is "{destination_path}"'
     )
@@ -252,7 +252,7 @@ if __name__ == "__main__":
     logger.remove()
     logger.add(sys.stderr, level=args.log_level)
     logger.add(f"file_{time.strftime('%Y-%m-%d')}.log", rotation="512Mb", level=args.log_level)
-    logger.debug("DEBUG LEVEL LOGS ARE VERY UNSAFE, PLEASE, SECURE YOUR LOGS WELL")
+    logger.info("LOGS ARE VERY UNSAFE, PLEASE, SECURE YOUR LOGS WELL")
 
     assert os.path.isfile(KEY_FILE), f'There is not "{KEY_FILE}" file'
 
