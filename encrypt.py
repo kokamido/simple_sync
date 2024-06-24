@@ -114,8 +114,10 @@ def decrypt_str(key: bytes, data: bytes, tag: bytes, encoding: str = "utf-8") ->
     return res
 
 
-def encrypt_path(key: bytes, path: str, cache: dict[str,str]) -> tuple[str, list[str]]:
+def encrypt_path(key: bytes, path: str, cache: dict[str,str], relative_to: str = None) -> tuple[str, list[str]]:
     logger.debug(f'Encrypting path "{path}" started')
+    if relative_to is not None:
+        path = os.path.relpath(path, relative_to)
     encrypted_path_segments = []
     tags = []
     for segment in path.split(os.sep):
@@ -152,8 +154,8 @@ def decrypt_path(
 
 def encrypt(key: bytes, dir: str):
     
-    dir = dir.strip(os.sep)
-
+    dir = dir.rstrip(os.sep)
+    parent_dir = os.path.dirname(dir)
     encrypted_path_segments = set()
     encrypted_path_to_file_content_tag = {}
     encrypted_path_segments_aliases = {}
@@ -166,14 +168,14 @@ def encrypt(key: bytes, dir: str):
     for dirpath, subdirs, files in os.walk(dir):
         logger.info(f"Encrypting {dirpath}")
 
-        encrypted_path, tags = encrypt_path(key, dirpath, encrypted_path_segments_aliases)
+        encrypted_path, tags = encrypt_path(key, dirpath, encrypted_path_segments_aliases, relative_to=parent_dir)
         save_path_segments(encrypted_path, tags)
         os.makedirs(encrypted_path, exist_ok=True)
 
         for subdir in subdirs:
             logger.debug(f'Processing subdir "{subdir}" of "{dirpath}" strated')
             full_path = os.path.join(dirpath, subdir)
-            encrypted_full_path, tags = encrypt_path(key, full_path, encrypted_path_segments_aliases)
+            encrypted_full_path, tags = encrypt_path(key, full_path, encrypted_path_segments_aliases, relative_to=parent_dir)
             save_path_segments(encrypted_full_path, tags)
             os.makedirs(encrypted_full_path)
             logger.debug(f'Processing subdir "{subdir}" of "{dirpath}" finished')
@@ -181,7 +183,7 @@ def encrypt(key: bytes, dir: str):
         for file in files:
             full_path = os.path.join(dirpath, file)
             logger.debug(f'Processing file "{file}" in "{full_path}" strated')
-            encrypted_full_path, tags = encrypt_path(key, full_path, encrypted_path_segments_aliases)
+            encrypted_full_path, tags = encrypt_path(key, full_path, encrypted_path_segments_aliases, relative_to=parent_dir)
             save_path_segments(encrypted_full_path, tags)
             tag = encrypt_file(key, full_path, encrypted_full_path)
             assert encrypted_full_path not in encrypted_path_to_file_content_tag
