@@ -1,8 +1,8 @@
 #!/bin/bash 
 
 
-DATA_DIR="$1"
-BACKUP_DIR="$1_backup"
+DATA_DIR="$2"
+BACKUP_DIR="$2_backup"
 ENCRYPTED_DIR="0"
 
 if [ -z ${DATA_DIR} ]; then
@@ -12,7 +12,7 @@ fi
 
 if [ "$1" = "push" ]; then
     rm -rf $ENCRYPTED_DIR
-    message=$2
+    message=$3
     if [ -z ${message} ]; then
         message="kokoko"
     fi
@@ -25,7 +25,7 @@ fi
 if [ "$1" = "pull" ]; then
     git pull && \
     mv $DATA_DIR $BACKUP_DIR && \
-    python encrypt.py --decrypt
+    python encrypt.py --decrypt && \
     exit 0
 fi
 
