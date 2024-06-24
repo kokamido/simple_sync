@@ -4,7 +4,7 @@ Author is NOT an cyber security professional. I tried to do my best and I use th
 
 # Description
 
-Simple tool useful for deterministic encryption of folders and files. It utilizes AES-SIV encryption. It handles file contents, file names and folder names. It preserve the files and folders structure after decryption. Because of deterministic encryption it is possible to store encrypted data in git. Encrypted file dons't change if it's plaintext verion not changed. Thus, this will not result in generation of a large volume of VCS metadata.
+Simple tool useful for deterministic encryption of folders and files. It utilizes AES-SIV encryption. It handles file contents, file names and folder names. It preserve the files and folders structure after decryption. Because of deterministic encryption it is possible to store encrypted data in git. Encrypted file does't change if it's plaintext version is not changed. Thus, this will not result in generation of a large volume of VCS metadata.
 
 # Dependencies
 
