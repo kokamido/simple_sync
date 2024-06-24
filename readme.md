@@ -10,7 +10,7 @@ Simple tool useful for deterministic encryption of folders and files. It utilize
 
 * [python3](https://www.python.org/downloads/) and it's standard library
 * [pycryptodome](https://github.com/Legrandin/pycryptodome/tree/master) for aes-siv implementation
-* [loguru](https://github.com/Delgan/loguru) because I hate writing standard boilerplate for logging in Python
+* [loguru](https://github.com/Delgan/loguru) because I hate writing standard boilerplate code for logging in Python
 
 # Initial set up
 
