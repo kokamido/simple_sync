@@ -32,7 +32,7 @@ pip install -r requirements.txt
 
 # How to use
 
-1. python encrypt.py your_folder_to_encrypt
+1. python encrypt.py --folder your_folder_to_encrypt
 2. store folder named "0" and file named "meta" somewhere
 3. python decrypt.py (it requires folder "0", file "meta" and your key in the file "aes_key")
 
