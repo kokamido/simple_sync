@@ -125,6 +125,8 @@ def encrypt_path(key: bytes, path: str, cache: dict[str,str]) -> tuple[str, list
     logger.debug(f'Encrypting path "{path}" finished')
     for segment in encrypted_path_segments:
         if segment not in cache:
+            if len(cache) == 1:
+                logger.warning(f'хуй "{segment}" "{path}"')
             cache[segment] = str(len(cache))
     return os.sep.join([cache[segment] for segment in encrypted_path_segments]), tags
 
@@ -151,6 +153,8 @@ def decrypt_path(
 
 
 def encrypt(key: bytes, dir: str):
+    
+    dir = dir.strip(os.sep)
 
     encrypted_path_segments = set()
     encrypted_path_to_file_content_tag = {}
