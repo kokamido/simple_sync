@@ -1,9 +1,14 @@
 #!/bin/bash 
 
 
-DATA_DIR=Root
-BACKUP_DIR=Root_backup
+DATA_DIR="$1"
+BACKUP_DIR="$1_backup"
 ENCRYPTED_DIR="0"
+
+if [ -z ${DATA_DIR} ]; then
+    echo "DATA_DIR is necessary"
+    exit 1
+fi
 
 if [ "$1" = "push" ]; then
     rm -rf $ENCRYPTED_DIR
