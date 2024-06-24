@@ -11,6 +11,7 @@ from Cryptodome.Cipher import AES
 BASE64_ENCODING = "utf-8"
 KEY_FILE = "aes_key"
 META_FILE = "meta"
+ENCRYPTED_ROOT_DIR = "0"
 
 
 def write_meta(
@@ -114,7 +115,9 @@ def decrypt_str(key: bytes, data: bytes, tag: bytes, encoding: str = "utf-8") ->
     return res
 
 
-def encrypt_path(key: bytes, path: str, cache: dict[str,str], relative_to: str = None) -> tuple[str, list[str]]:
+def encrypt_path(
+    key: bytes, path: str, cache: dict[str, str], relative_to: str = None
+) -> tuple[str, list[str]]:
     logger.debug(f'Encrypting path "{path}" started')
     if relative_to is not None:
         path = os.path.relpath(path, relative_to)
@@ -153,7 +156,7 @@ def decrypt_path(
 
 
 def encrypt(key: bytes, dir: str):
-    
+
     dir = dir.rstrip(os.sep)
     parent_dir = os.path.dirname(dir)
     encrypted_path_segments = set()
@@ -168,14 +171,18 @@ def encrypt(key: bytes, dir: str):
     for dirpath, subdirs, files in os.walk(dir):
         logger.info(f"Encrypting {dirpath}")
 
-        encrypted_path, tags = encrypt_path(key, dirpath, encrypted_path_segments_aliases, relative_to=parent_dir)
+        encrypted_path, tags = encrypt_path(
+            key, dirpath, encrypted_path_segments_aliases, relative_to=parent_dir
+        )
         save_path_segments(encrypted_path, tags)
         os.makedirs(encrypted_path, exist_ok=True)
 
         for subdir in subdirs:
             logger.debug(f'Processing subdir "{subdir}" of "{dirpath}" strated')
             full_path = os.path.join(dirpath, subdir)
-            encrypted_full_path, tags = encrypt_path(key, full_path, encrypted_path_segments_aliases, relative_to=parent_dir)
+            encrypted_full_path, tags = encrypt_path(
+                key, full_path, encrypted_path_segments_aliases, relative_to=parent_dir
+            )
             save_path_segments(encrypted_full_path, tags)
             os.makedirs(encrypted_full_path)
             logger.debug(f'Processing subdir "{subdir}" of "{dirpath}" finished')
@@ -183,7 +190,9 @@ def encrypt(key: bytes, dir: str):
         for file in files:
             full_path = os.path.join(dirpath, file)
             logger.debug(f'Processing file "{file}" in "{full_path}" strated')
-            encrypted_full_path, tags = encrypt_path(key, full_path, encrypted_path_segments_aliases, relative_to=parent_dir)
+            encrypted_full_path, tags = encrypt_path(
+                key, full_path, encrypted_path_segments_aliases, relative_to=parent_dir
+            )
             save_path_segments(encrypted_full_path, tags)
             tag = encrypt_file(key, full_path, encrypted_full_path)
             assert encrypted_full_path not in encrypted_path_to_file_content_tag
@@ -201,26 +210,74 @@ def encrypt(key: bytes, dir: str):
 
 def decrypt(key: bytes):
     meta = read_meta()
-    encrypted_path_segments_aliases = {v:k for k,v in meta['encrypted_path_segments_aliases'].items()}
+    encrypted_path_segments_aliases = {
+        v: k for k, v in meta["encrypted_path_segments_aliases"].items()
+    }
     encrypted_path_segment_to_orig = {}
     for encrypted_path_segment_alias, tag in meta["encrypted_path_segments"]:
-        encrypted_path_segment = encrypted_path_segments_aliases[encrypted_path_segment_alias]
-        decrypted_path_segment = decrypt_str(key, bytes_from_base64(encrypted_path_segment), bytes_from_base64(tag))
+        encrypted_path_segment = encrypted_path_segments_aliases[
+            encrypted_path_segment_alias
+        ]
+        decrypted_path_segment = decrypt_str(
+            key, bytes_from_base64(encrypted_path_segment), bytes_from_base64(tag)
+        )
         encrypted_path_segment_to_orig[encrypted_path_segment] = decrypted_path_segment
         logger.debug(
             f'Path segment decrypted: "{encrypted_path_segment}" -> "{decrypted_path_segment}"'
         )
 
-    assert os.path.isdir('0'), f'There is no root dir ("0")'
-    for dirpath, subdirs, files in os.walk("0"):
-        os.makedirs(decrypt_path(dirpath, encrypted_path_segment_to_orig, encrypted_path_segments_aliases), exist_ok=True)
+    assert os.path.isdir(
+        ENCRYPTED_ROOT_DIR
+    ), f'There is no root dir ("{ENCRYPTED_ROOT_DIR}")'
+    root_dir_name = decrypt_path(
+        ENCRYPTED_ROOT_DIR,
+        encrypted_path_segment_to_orig,
+        encrypted_path_segments_aliases,
+    )
+    if os.path.exists(root_dir_name):
+        backup_name = f"{root_dir_name}_backup_{time.strftime('%Y-%m-%d_%H:%M:%S')}"
+        logger.info(f'Found "{root_dir_name}", creating backup "{backup_name}".')
+     
+        import shutil
+        if os.path.exists(root_dir_name):
+            if os.path.isdir(root_dir_name):
+                shutil.copytree(root_dir_name, backup_name)
+            elif os.path.isfile(root_dir_name):
+                shutil.copy2(root_dir_name, backup_name)
+            else:
+                logger.error(
+                    f"{root_dir_name} already exist. It has the same name as the root directory of decrypted data but it's not a file of directory. Remove or rename it."
+                )
+    for dirpath, subdirs, files in os.walk(ENCRYPTED_ROOT_DIR):
+        os.makedirs(
+            decrypt_path(
+                dirpath, encrypted_path_segment_to_orig, encrypted_path_segments_aliases
+            ),
+            exist_ok=True,
+        )
         for subdir in subdirs:
             full_path = os.path.join(dirpath, subdir)
-            os.makedirs(decrypt_path(full_path, encrypted_path_segment_to_orig, encrypted_path_segments_aliases), exist_ok=True)
+            os.makedirs(
+                decrypt_path(
+                    full_path,
+                    encrypted_path_segment_to_orig,
+                    encrypted_path_segments_aliases,
+                ),
+                exist_ok=True,
+            )
         for file in files:
             full_path = os.path.join(dirpath, file)
             tag = meta["encrypted_path_to_file_content_tag"][full_path]
-            decrypt_file(key, bytes_from_base64(tag), full_path, decrypt_path(full_path, encrypted_path_segment_to_orig, encrypted_path_segments_aliases))
+            decrypt_file(
+                key,
+                bytes_from_base64(tag),
+                full_path,
+                decrypt_path(
+                    full_path,
+                    encrypted_path_segment_to_orig,
+                    encrypted_path_segments_aliases,
+                ),
+            )
 
 
 def parse_arguments():
@@ -255,8 +312,12 @@ if __name__ == "__main__":
     print(args)
     logger.remove()
     logger.add(sys.stderr, level=args.log_level)
-    logger.add(f"file_{time.strftime('%Y-%m-%d')}.log", rotation="512Mb", level=args.log_level)
-    logger.info("LOGS MAY CONTAIN VERY SENSITIVE INFORMATION. PLEASE, SECURE YOUR LOGS WELL")
+    logger.add(
+        f"file_{time.strftime('%Y-%m-%d')}.log", rotation="512Mb", level=args.log_level
+    )
+    logger.info(
+        "LOGS MAY CONTAIN VERY SENSITIVE INFORMATION. PLEASE, SECURE YOUR LOGS WELL"
+    )
 
     assert os.path.isfile(KEY_FILE), f'There is no "{KEY_FILE}" file'
     if not args.decrypt:
