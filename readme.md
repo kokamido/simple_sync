@@ -73,7 +73,7 @@ You can find test data in this repo; "test_folder" is unencrypted directory, "0"
     3bad6af0fa4b8b330d162e19938ee981  test_folder/qwe/qwe/qweqwe
     d583667ba83397298563a0cff25af133  test_folder/qwe/qweqwe
 ```
-For the sake of simplicity of my scenario I wrote a script that encrypts my data and puts it to git. Remember, thath meaningful commit message may cause some kind of insecurity.
+For the sake of simplicity of my scenario I wrote a script that encrypts my data and puts it to git. Remember, that meaningful commit message may cause some kind of insecurity.
 
 ```shell
 
