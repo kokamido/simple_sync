@@ -25,8 +25,8 @@ According to [documentation of SIV-mode](https://www.pycryptodome.org/src/cipher
 Setup of python enviroment is standart:
 
 ```shell 
-python -m venv .venv
-source .venv/bin/activate
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
