@@ -46,7 +46,7 @@ You can find test data in this repo; "test_folder" is unencrypted directory, "0"
     3bad6af0fa4b8b330d162e19938ee981  test_folder/qwe/qwe/qweqwe
     d583667ba83397298563a0cff25af133  test_folder/qwe/qweqwe
 
-> python encrypt.py --folder test_folder
+> rm -rf 0 && python encrypt.py --folder test_folder
     Namespace(folder='test_folder', decrypt=False, log_level='INFO')
     2024-06-24 12:41:19.515 | INFO     | __main__:<module>:257 - LOGS ARE VERY UNSAFE, PLEASE, SECURE YOUR LOGS WELL
     2024-06-24 12:41:19.515 | INFO     | __main__:encrypt:167 - Encrypting test_folder
