@@ -287,7 +287,7 @@ def parse_arguments():
         "--folder",
         type=str,
         required=False,
-        help="Path to the folder that needs to be encrypted or decrypted",
+        help="Path to the folder to encrypt",
     )
 
     parser.add_argument(
