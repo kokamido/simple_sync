@@ -8,7 +8,7 @@ Simple tool useful for deterministic encryption of folders and files. It utilize
 
 # Dependencies
 
-* [python3](https://www.python.org/downloads/) and it's standard library
+* [python3](https://www.python.org/downloads/) and its standard library
 * [pycryptodome](https://github.com/Legrandin/pycryptodome/tree/master) for aes-siv implementation
 * [loguru](https://github.com/Delgan/loguru) because I hate writing standard boilerplate code for logging in Python
 
@@ -36,7 +36,7 @@ pip install -r requirements.txt
 2. store folder named "0" and file named "meta" somewhere
 3. python decrypt.py (it requires folder "0", file "meta" and your key in the file "aes_key")
 
-You can find test data in this repo; "test_folder" is unencrypted directory, "0" and "meta" is the same data, but encrypted. 
+You can find test data in this repo; "test_folder" is unencrypted directory, "0" and "meta" are the same data, but encrypted. 
 
 ```shell
 > find test_folder -type f -exec md5sum {} \;
