@@ -1,6 +1,6 @@
 # Disclaimer
 
-Author is NOT an cyber security professional. I tried to do my best and I use this tool for my own data but I provide no guarantees of safety or consistency. At the moment, this tool have been used and tested only in Ubuntu 22.04.
+Author is NOT a cyber security professional. I tried to do my best and I use this tool for my own data but I provide no guarantees of safety or consistency. At the moment, this tool have been used and tested only in Ubuntu 22.04.
 
 # Description
 
