@@ -239,15 +239,15 @@ def decrypt(key: bytes):
         logger.info(f'Found "{root_dir_name}", creating backup "{backup_name}".')
      
         import shutil
-        if os.path.exists(root_dir_name):
-            if os.path.isdir(root_dir_name):
-                shutil.copytree(root_dir_name, backup_name)
-            elif os.path.isfile(root_dir_name):
-                shutil.copy2(root_dir_name, backup_name)
-            else:
-                logger.error(
-                    f"{root_dir_name} already exist. It has the same name as the root directory of decrypted data but it's not a file of directory. Remove or rename it."
-                )
+        
+        if os.path.isdir(root_dir_name):
+            shutil.copytree(root_dir_name, backup_name)
+        elif os.path.isfile(root_dir_name):
+            shutil.copy2(root_dir_name, backup_name)
+        else:
+            logger.error(
+                f"{root_dir_name} already exists. It has the same name as the root directory of decrypted data but it's not a file of directory. Remove or rename it."
+            )
     for dirpath, subdirs, files in os.walk(ENCRYPTED_ROOT_DIR):
         os.makedirs(
             decrypt_path(
