@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import time
+import hashlib
 from loguru import logger
 from Cryptodome.Cipher import AES
 
@@ -14,10 +15,27 @@ META_FILE = "meta"
 ENCRYPTED_ROOT_DIR = "0"
 
 
+def get_aes_key_hash(aes_key: bytes) -> str:
+    logger.debug("Calculating aes key hash")
+    hasher = hashlib.sha256()
+    bytes_to_hash = max(
+        int(len(aes_key) / 4), 2
+    )  # don't want to allow bruteforce attack via sha256
+    to_hash = (
+        aes_key[: int(bytes_to_hash / 2)]
+        + aes_key[int(len(aes_key) / 2) : int(len(aes_key) / 2) + int(bytes_to_hash / 2)]
+    ) # because aes_siv splits key into 2 parts https://github.com/nymble/cryptopy/blob/efcfb051dc6a0fbb5a03744aa45b29c7e77cb9e6/cipher/aes_siv.py#L58
+    hasher.update(to_hash)
+    hash = hasher.hexdigest()
+    logger.debug(f'Aes key hash is "{hash}"')
+    return hash
+
+
 def write_meta(
     encrypted_path_segments: dict[str, str],
     encrypted_path_segments_aliases: dict[str, str],
     encrypted_path_to_file_content_tag: dict[str, str],
+    aes_key: bytes,
 ):
     logger.info("Writing meta started")
 
@@ -27,6 +45,7 @@ def write_meta(
                 "encrypted_path_segments": list(encrypted_path_segments),
                 "encrypted_path_segments_aliases": encrypted_path_segments_aliases,
                 "encrypted_path_to_file_content_tag": encrypted_path_to_file_content_tag,
+                "aes_key_hash": get_aes_key_hash(aes_key),
             },
             out,
             indent=2,
@@ -35,9 +54,15 @@ def write_meta(
     logger.info("Writing meta finished")
 
 
-def read_meta():
+def read_meta(should_exist: bool = True):
+    logger.info(f'Try to read meta from "{META_FILE}", should_exists "{should_exist}"')
+    if not should_exist:
+        if not os.path.exists(META_FILE):
+            logger.debug(f'Can\'t read meta: "{META_FILE}" does not exist.')
+            return None
     with open(META_FILE, encoding=BASE64_ENCODING) as inp:
         meta = json.load(inp)
+    logger.info("Meta has been read")
     return meta
 
 
@@ -116,7 +141,7 @@ def decrypt_str(key: bytes, data: bytes, tag: bytes, encoding: str = "utf-8") ->
 
 
 def encrypt_path(
-    key: bytes, path: str, cache: dict[str, str], relative_to: str = None
+    key: bytes, path: str, known_pathes_mapping: dict[str, str], relative_to: str = None
 ) -> tuple[str, list[str]]:
     logger.debug(f'Encrypting path "{path}" started')
     if relative_to is not None:
@@ -128,10 +153,19 @@ def encrypt_path(
         encrypted_path_segments.append(bytes_to_base64(ciphertext))
         tags.append(bytes_to_base64(tag))
     logger.debug(f'Encrypting path "{path}" finished')
+
     for segment in encrypted_path_segments:
-        if segment not in cache:
-            cache[segment] = str(len(cache))
-    return os.sep.join([cache[segment] for segment in encrypted_path_segments]), tags
+        if segment not in known_pathes_mapping:
+            logger.debug(
+                f'Adding known_pathes_mapping [{segment}] -> "{str(len(known_pathes_mapping))}"'
+            )
+            known_pathes_mapping[segment] = str(len(known_pathes_mapping))
+    return (
+        os.sep.join(
+            [known_pathes_mapping[segment] for segment in encrypted_path_segments]
+        ),
+        tags,
+    )
 
 
 def decrypt_path(
@@ -162,6 +196,19 @@ def encrypt(key: bytes, dir: str):
     encrypted_path_segments = set()
     encrypted_path_to_file_content_tag = {}
     encrypted_path_segments_aliases = {}
+
+    if (meta := read_meta(should_exist=False)) is not None:
+        if meta.get("aes_key_hash") == get_aes_key_hash(key):
+            logger.info("Same key detected, restoring path parts mapping")
+            encrypted_path_segments_aliases = {
+                encrypted_name: alias
+                for encrypted_name, alias in meta[
+                    "encrypted_path_segments_aliases"
+                ].items()
+            }  # have to restore the exact mapping to prevent the encrypted name from changing, because this will lead to unnecessarily large commits.
+            logger.debug(
+                f'"encrypted_path_segments_aliases" {encrypted_path_segments_aliases}'
+            )
 
     def save_path_segments(encrypted_path, tags):
         segments = encrypted_path.split(os.sep)
@@ -205,6 +252,7 @@ def encrypt(key: bytes, dir: str):
         encrypted_path_segments=encrypted_path_segments,
         encrypted_path_segments_aliases=encrypted_path_segments_aliases,
         encrypted_path_to_file_content_tag=encrypted_path_to_file_content_tag,
+        aes_key=key,
     )
 
 
@@ -237,9 +285,9 @@ def decrypt(key: bytes):
     if os.path.exists(root_dir_name):
         backup_name = f"{root_dir_name}_backup_{time.strftime('%Y-%m-%d_%H:%M:%S')}"
         logger.info(f'Found "{root_dir_name}", creating backup "{backup_name}".')
-     
+
         import shutil
-        
+
         if os.path.isdir(root_dir_name):
             shutil.copytree(root_dir_name, backup_name)
         elif os.path.isfile(root_dir_name):
@@ -309,7 +357,7 @@ def parse_arguments():
 
 if __name__ == "__main__":
     args = parse_arguments()
-    print(args)
+    logger.debug(args)
     logger.remove()
     logger.add(sys.stderr, level=args.log_level)
     logger.add(
