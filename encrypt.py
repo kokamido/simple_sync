@@ -24,7 +24,7 @@ def get_aes_key_hash(aes_key: bytes) -> str:
     to_hash = (
         aes_key[: int(bytes_to_hash / 2)]
         + aes_key[int(len(aes_key) / 2) : int(len(aes_key) / 2) + int(bytes_to_hash / 2)]
-    ) # because aes_siv splits key into 2 parts https://github.com/nymble/cryptopy/blob/efcfb051dc6a0fbb5a03744aa45b29c7e77cb9e6/cipher/aes_siv.py#L58
+    ) # because aes_siv splits key into 2 parts https://github.com/Legrandin/pycryptodome/blob/d470020d85ce9a15a07787ef5449df157abd8d0f/lib/Crypto/Cipher/_mode_siv.py#L114
     hasher.update(to_hash)
     hash = hasher.hexdigest()
     logger.debug(f'Aes key hash is "{hash}"')
