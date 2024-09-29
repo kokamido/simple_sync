@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import hashlib
+import random
 from loguru import logger
 from Cryptodome.Cipher import AES
 
@@ -18,13 +19,11 @@ ENCRYPTED_ROOT_DIR = "0"
 def get_aes_key_hash(aes_key: bytes) -> str:
     logger.debug("Calculating aes key hash")
     hasher = hashlib.sha256()
-    bytes_to_hash = max(
+    bytes_count_to_hash = max(
         int(len(aes_key) / 4), 2
     )  # don't want to allow bruteforce attack via sha256
-    to_hash = (
-        aes_key[: int(bytes_to_hash / 2)]
-        + aes_key[int(len(aes_key) / 2) : int(len(aes_key) / 2) + int(bytes_to_hash / 2)]
-    ) # because aes_siv splits key into 2 parts https://github.com/Legrandin/pycryptodome/blob/d470020d85ce9a15a07787ef5449df157abd8d0f/lib/Crypto/Cipher/_mode_siv.py#L114
+    random.seed(aes_key)
+    to_hash = str(random.sample(aes_key, bytes_count_to_hash)).encode(encoding="utf-8")
     hasher.update(to_hash)
     hash = hasher.hexdigest()
     logger.debug(f'Aes key hash is "{hash}"')
@@ -209,6 +208,10 @@ def encrypt(key: bytes, dir: str):
             logger.debug(
                 f'"encrypted_path_segments_aliases" {encrypted_path_segments_aliases}'
             )
+        else:
+            logger.warning(
+                "The AES key has been changed. This may result in changes for each encrypted file, which will affect the size of the commit."
+            )
 
     def save_path_segments(encrypted_path, tags):
         segments = encrypted_path.split(os.sep)
@@ -357,7 +360,7 @@ def parse_arguments():
 
 if __name__ == "__main__":
     args = parse_arguments()
-    logger.debug(args)
+    logger.info(args)
     logger.remove()
     logger.add(sys.stderr, level=args.log_level)
     logger.add(
