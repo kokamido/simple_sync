@@ -318,17 +318,18 @@ def decrypt(key: bytes):
             )
         for file in files:
             full_path = os.path.join(dirpath, file)
-            tag = meta["encrypted_path_to_file_content_tag"][full_path]
-            decrypt_file(
-                key,
-                bytes_from_base64(tag),
+            decrypted_path = decrypt_path(
                 full_path,
-                decrypt_path(
-                    full_path,
-                    encrypted_path_segment_to_orig,
-                    encrypted_path_segments_aliases,
-                ),
+                encrypted_path_segment_to_orig,
+                encrypted_path_segments_aliases,
             )
+            tag = meta["encrypted_path_to_file_content_tag"].get(full_path, None)
+            if tag is None:
+                logger.error(
+                    f"Meta and actual files are incompatible. Can't find tag for path '{full_path}'. Decrypted path is '{decrypted_path}'. We have to skip this file."
+                )
+            else:
+                decrypt_file(key, bytes_from_base64(tag), full_path, decrypted_path)
 
 
 def parse_arguments():
