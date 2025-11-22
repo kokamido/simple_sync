@@ -1,7 +1,4 @@
-Root
 aes_key
-Root_backup
-
 *.log
 venv
 .venv

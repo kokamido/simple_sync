@@ -5,385 +5,260 @@ import os
 import sys
 import time
 import hashlib
-import random
+import shutil
 from loguru import logger
 from Cryptodome.Cipher import AES
 
-
 BASE64_ENCODING = "utf-8"
 KEY_FILE = "aes_key"
-META_FILE = "meta"
-ENCRYPTED_ROOT_DIR = "0"
-
+META_FILE = "meta.json"
 
 def get_aes_key_hash(aes_key: bytes) -> str:
-    logger.debug("Calculating aes key hash")
-    hasher = hashlib.sha256()
-    bytes_count_to_hash = max(
-        int(len(aes_key) / 4), 2
-    )  # don't want to allow bruteforce attack via sha256
-    random.seed(aes_key)
-    to_hash = str(random.sample(aes_key, bytes_count_to_hash)).encode(encoding="utf-8")
-    hasher.update(to_hash)
-    hash = hasher.hexdigest()
-    logger.debug(f'Aes key hash is "{hash}"')
-    return hash
-
+    return hashlib.sha256(aes_key).hexdigest()
 
 def write_meta(
-    encrypted_path_segments: dict[str, str],
+    encrypted_path_segments: list, # list of [alias, tag]
     encrypted_path_segments_aliases: dict[str, str],
     encrypted_path_to_file_content_tag: dict[str, str],
     aes_key: bytes,
+    root_alias: str
 ):
     logger.info("Writing meta started")
-
+    data = {
+        "encrypted_path_segments": encrypted_path_segments,
+        "encrypted_path_segments_aliases": encrypted_path_segments_aliases,
+        "encrypted_path_to_file_content_tag": encrypted_path_to_file_content_tag,
+        "aes_key_hash": get_aes_key_hash(aes_key),
+        "root_alias": root_alias
+    }
+    
     with open(META_FILE, "w", encoding=BASE64_ENCODING) as out:
-        json.dump(
-            {
-                "encrypted_path_segments": list(encrypted_path_segments),
-                "encrypted_path_segments_aliases": encrypted_path_segments_aliases,
-                "encrypted_path_to_file_content_tag": encrypted_path_to_file_content_tag,
-                "aes_key_hash": get_aes_key_hash(aes_key),
-            },
-            out,
-            indent=2,
-            ensure_ascii=False,
-        )
+        json.dump(data, out, indent=2, ensure_ascii=False)
     logger.info("Writing meta finished")
 
-
 def read_meta(should_exist: bool = True):
-    logger.info(f'Try to read meta from "{META_FILE}", should_exists "{should_exist}"')
-    if not should_exist:
-        if not os.path.exists(META_FILE):
-            logger.debug(f'Can\'t read meta: "{META_FILE}" does not exist.')
-            return None
+    if not os.path.exists(META_FILE):
+        if should_exist:
+            logger.error(f"Meta file {META_FILE} not found!")
+            sys.exit(1)
+        return None
+        
     with open(META_FILE, encoding=BASE64_ENCODING) as inp:
-        meta = json.load(inp)
-    logger.info("Meta has been read")
-    return meta
-
+        return json.load(inp)
 
 def bytes_to_base64(data: bytes) -> str:
     return base64.b64encode(data).decode(BASE64_ENCODING)
 
-
 def bytes_from_base64(data: str) -> bytes:
     return base64.b64decode(data.encode(BASE64_ENCODING))
 
-
-def encrypt_file(key: bytes, source_path: str, destination_path: str) -> bytes:
-    logger.debug(
-        f'Encrypting file "{source_path}" started. Destination is "{destination_path}"'
-    )
+def encrypt_bytes(key: bytes, data: bytes) -> tuple[bytes, bytes]:
+    # SIV mode: deterministic. Good for git diffs, bad for pattern hiding.
     cipher = AES.new(key, AES.MODE_SIV)
-    assert os.path.isfile(source_path), f'"{source_path}" is not a file'
-    if os.path.exists(destination_path):
-        logger.warning(f'Overwriting "{destination_path}"')
-    with open(source_path, "rb") as inp:
-        with open(destination_path, "wb") as out:
-            ciphertext, tag = cipher.encrypt_and_digest(inp.read())
-            out.write(ciphertext)
-    logger.debug(
-        f'Encrypting file "{source_path}" finished. Destination is "{destination_path}"'
-    )
-    return tag
-
-
-def decrypt_file(
-    key: bytes, tag: bytes, source_path: str, destination_path: str
-) -> bytes:
-    logger.debug(
-        f'Decrypting file "{source_path}" started. Destination is "{destination_path}"'
-    )
-
-    cipher = AES.new(key, AES.MODE_SIV)
-    assert os.path.isfile(source_path), f'"{source_path}" is not a file'
-    if os.path.exists(destination_path):
-        logger.warning(f'Overwriting "{destination_path}"')
-    with open(source_path, "rb") as inp:
-        with open(destination_path, "wb") as out:
-            plain_text = cipher.decrypt_and_verify(inp.read(), tag)
-            out.write(plain_text)
-    logger.debug(
-        f'Decrypting file "{source_path}" finished. Destination is "{destination_path}"'
-    )
-
-
-def encrypt_str(key: bytes, data: str, encoding: str = "utf-8") -> tuple[bytes, bytes]:
-    logger.debug(f'Encrypting str "{data}" started')
-    assert isinstance(data, str), f'"{data}" is not str, it is "{type(data)}"'
-    cipher = AES.new(key, AES.MODE_SIV)
-    try:
-        data_as_bytes = data.encode(encoding)
-    except Exception as e:
-        logger.exception(f'Can\'t encode data "{data}" as "{encoding}"')
-        raise e
-    ciphertext, tag = cipher.encrypt_and_digest(data_as_bytes)
-    logger.debug(f'Encrypting str "{data}" finished')
+    ciphertext, tag = cipher.encrypt_and_digest(data)
     return ciphertext, tag
 
-
-def decrypt_str(key: bytes, data: bytes, tag: bytes, encoding: str = "utf-8") -> str:
-    logger.debug(f"Decrypting bytes started")
-    assert isinstance(data, bytes), f'"data" is not bytes, it is "{type(data)}"'
+def decrypt_bytes(key: bytes, ciphertext: bytes, tag: bytes) -> bytes:
     cipher = AES.new(key, AES.MODE_SIV)
-    decrypted_bytes = cipher.decrypt_and_verify(data, tag)
-    try:
-        res = decrypted_bytes.decode(encoding)
-    except Exception as e:
-        logger.exception(f'Can\'t decode bytes "{decrypted_bytes}" as "{encoding}"')
-        raise e
-    logger.debug(f"Decrypting bytes finished")
-    return res
+    return cipher.decrypt_and_verify(ciphertext, tag)
 
+def encrypt_file(key: bytes, source_path: str, destination_path: str) -> bytes:
+    logger.debug(f"Encrypting file {source_path} -> {destination_path}")
+    with open(source_path, "rb") as inp:
+        data = inp.read()
+    
+    ciphertext, tag = encrypt_bytes(key, data)
+    
+    with open(destination_path, "wb") as out:
+        out.write(ciphertext)
+    
+    return tag
 
-def encrypt_path(
-    key: bytes, path: str, known_pathes_mapping: dict[str, str], relative_to: str = None
-) -> tuple[str, list[str]]:
-    logger.debug(f'Encrypting path "{path}" started')
-    if relative_to is not None:
-        path = os.path.relpath(path, relative_to)
-    encrypted_path_segments = []
-    tags = []
-    for segment in path.split(os.sep):
-        ciphertext, tag = encrypt_str(key, segment)
-        encrypted_path_segments.append(bytes_to_base64(ciphertext))
-        tags.append(bytes_to_base64(tag))
-    logger.debug(f'Encrypting path "{path}" finished')
+def decrypt_file(key: bytes, tag: bytes, source_path: str, destination_path: str):
+    with open(source_path, "rb") as inp:
+        ciphertext = inp.read()
+    
+    plaintext = decrypt_bytes(key, ciphertext, tag)
+    
+    with open(destination_path, "wb") as out:
+        out.write(plaintext)
 
-    for segment in encrypted_path_segments:
-        if segment not in known_pathes_mapping:
-            logger.debug(
-                f'Adding known_pathes_mapping [{segment}] -> "{str(len(known_pathes_mapping))}"'
-            )
-            known_pathes_mapping[segment] = str(len(known_pathes_mapping))
-    return (
-        os.sep.join(
-            [known_pathes_mapping[segment] for segment in encrypted_path_segments]
-        ),
-        tags,
-    )
+def encrypt_str(key: bytes, data: str) -> tuple[str, str]:
+    # Returns (b64_ciphertext, b64_tag)
+    ct, tag = encrypt_bytes(key, data.encode("utf-8"))
+    return bytes_to_base64(ct), bytes_to_base64(tag)
 
+def decrypt_str(key: bytes, b64_ct: str, b64_tag: str) -> str:
+    ct = bytes_from_base64(b64_ct)
+    tag = bytes_from_base64(b64_tag)
+    return decrypt_bytes(key, ct, tag).decode("utf-8")
 
-def decrypt_path(
-    encrypted_path: str,
-    encrypted_path_segment_to_original: dict[str, str],
-    encrypted_path_segments_aliases: dict[str, str],
-) -> str:
-    logger.debug(f'Decrypting path "{encrypted_path}" started')
-    decrypted_path_segments = []
+def get_path_segments(path: str):
+    return [p for p in path.split(os.sep) if p]
 
-    for segment in encrypted_path.split(os.sep):
-        segment = encrypted_path_segments_aliases[segment]
-        assert (
-            segment in encrypted_path_segment_to_original
-        ), f'Segment "{segment}" is not in encrypted_path_segment_to_original'
-        decrypted_path_segments.append(encrypted_path_segment_to_original[segment])
-    res = os.sep.join(decrypted_path_segments)
-    logger.debug(
-        f'Decrypting path "{encrypted_path}" finished, res is "{os.sep.join(decrypted_path_segments)}"'
-    )
-    return res
+def encrypt(key: bytes, source_dir: str):
+    source_dir = os.path.abspath(source_dir)
+    parent_dir = os.path.dirname(source_dir)
+    
+    logger.info(f"Encrypting {source_dir}, relative to {parent_dir}")
 
-
-def encrypt(key: bytes, dir: str):
-
-    dir = dir.rstrip(os.sep)
-    parent_dir = os.path.dirname(dir)
-    encrypted_path_segments = set()
+    encrypted_path_segments_set = set() # Using set to avoid duplicates
     encrypted_path_to_file_content_tag = {}
-    encrypted_path_segments_aliases = {}
+    encrypted_path_segments_aliases = {} 
 
-    if (meta := read_meta(should_exist=False)) is not None:
-        if meta.get("aes_key_hash") == get_aes_key_hash(key):
-            logger.info("Same key detected, restoring path parts mapping")
-            encrypted_path_segments_aliases = {
-                encrypted_name: alias
-                for encrypted_name, alias in meta[
-                    "encrypted_path_segments_aliases"
-                ].items()
-            }  # have to restore the exact mapping to prevent the encrypted name from changing, because this will lead to unnecessarily large commits.
-            logger.debug(
-                f'"encrypted_path_segments_aliases" {encrypted_path_segments_aliases}'
-            )
-        else:
-            logger.warning(
-                "The AES key has been changed. This may result in changes for each encrypted file, which will affect the size of the commit."
-            )
+    # Restore mapping if key matches
+    meta = read_meta(should_exist=False)
+    if meta and meta.get("aes_key_hash") == get_aes_key_hash(key):
+        logger.info("Key matched, restoring previous path aliases to minimize diff")
+        for enc_seg, alias in meta["encrypted_path_segments_aliases"].items():
+            encrypted_path_segments_aliases[enc_seg] = alias
+    else:
+        if meta: logger.warning("Key changed or no meta. Full rewrite.")
 
-    def save_path_segments(encrypted_path, tags):
-        segments = encrypted_path.split(os.sep)
-        for encrypted_segment, tag in zip(segments, tags):
-            encrypted_path_segments.add((encrypted_segment, tag))
+    def get_alias_for_segment(segment_str: str) -> str:
+        enc_seg, tag = encrypt_str(key, segment_str)
+        encrypted_path_segments_set.add((enc_seg, tag))
+        
+        if enc_seg not in encrypted_path_segments_aliases:
+            new_id = str(len(encrypted_path_segments_aliases))
+            encrypted_path_segments_aliases[enc_seg] = new_id
+            
+        return encrypted_path_segments_aliases[enc_seg]
 
-    for dirpath, subdirs, files in os.walk(dir):
-        logger.info(f"Encrypting {dirpath}")
+    root_folder_name = os.path.basename(source_dir)
+    root_alias = get_alias_for_segment(root_folder_name)
+    
+    os.makedirs(root_alias, exist_ok=True)
 
-        encrypted_path, tags = encrypt_path(
-            key, dirpath, encrypted_path_segments_aliases, relative_to=parent_dir
-        )
-        save_path_segments(encrypted_path, tags)
-        os.makedirs(encrypted_path, exist_ok=True)
-
-        for subdir in subdirs:
-            logger.debug(f'Processing subdir "{subdir}" of "{dirpath}" strated')
-            full_path = os.path.join(dirpath, subdir)
-            encrypted_full_path, tags = encrypt_path(
-                key, full_path, encrypted_path_segments_aliases, relative_to=parent_dir
-            )
-            save_path_segments(encrypted_full_path, tags)
-            os.makedirs(encrypted_full_path)
-            logger.debug(f'Processing subdir "{subdir}" of "{dirpath}" finished')
+    for dirpath, subdirs, files in os.walk(source_dir):
+        rel_path = os.path.relpath(dirpath, parent_dir)
+        segments = get_path_segments(rel_path)
+        
+        path_aliases = [get_alias_for_segment(seg) for seg in segments]
+        encrypted_dir_path = os.path.join(*path_aliases)
+        
+        os.makedirs(encrypted_dir_path, exist_ok=True)
 
         for file in files:
-            full_path = os.path.join(dirpath, file)
-            logger.debug(f'Processing file "{file}" in "{full_path}" strated')
-            encrypted_full_path, tags = encrypt_path(
-                key, full_path, encrypted_path_segments_aliases, relative_to=parent_dir
-            )
-            save_path_segments(encrypted_full_path, tags)
-            tag = encrypt_file(key, full_path, encrypted_full_path)
-            assert encrypted_full_path not in encrypted_path_to_file_content_tag
-            encrypted_path_to_file_content_tag[encrypted_full_path] = bytes_to_base64(
-                tag
-            )
-            logger.debug(f'Processing file "{file}" in "{full_path}" finished')
+            file_path = os.path.join(dirpath, file)
+            file_rel_path = os.path.join(rel_path, file) # Путь включая корень
+            
+            file_segments = get_path_segments(file_rel_path)
+            file_path_aliases = [get_alias_for_segment(seg) for seg in file_segments]
+            encrypted_file_path = os.path.join(*file_path_aliases)
+            
+            tag = encrypt_file(key, file_path, encrypted_file_path)
+            
+            encrypted_path_to_file_content_tag[encrypted_file_path] = bytes_to_base64(tag)
 
     write_meta(
-        encrypted_path_segments=encrypted_path_segments,
+        encrypted_path_segments=list(encrypted_path_segments_set),
         encrypted_path_segments_aliases=encrypted_path_segments_aliases,
         encrypted_path_to_file_content_tag=encrypted_path_to_file_content_tag,
         aes_key=key,
+        root_alias=root_alias
     )
+    logger.success(f"Encryption finished. Root alias is '{root_alias}'")
 
 
 def decrypt(key: bytes):
     meta = read_meta()
-    encrypted_path_segments_aliases = {
-        v: k for k, v in meta["encrypted_path_segments_aliases"].items()
-    }
-    encrypted_path_segment_to_orig = {}
-    for encrypted_path_segment_alias, tag in meta["encrypted_path_segments"]:
-        encrypted_path_segment = encrypted_path_segments_aliases[
-            encrypted_path_segment_alias
-        ]
-        decrypted_path_segment = decrypt_str(
-            key, bytes_from_base64(encrypted_path_segment), bytes_from_base64(tag)
-        )
-        encrypted_path_segment_to_orig[encrypted_path_segment] = decrypted_path_segment
-        logger.debug(
-            f'Path segment decrypted: "{encrypted_path_segment}" -> "{decrypted_path_segment}"'
-        )
+    
+    # Восстанавливаем обратный маппинг: Alias -> DecryptedString
+    alias_to_decrypted = {}
+    
+    # Сначала маппинг Alias -> (EncryptedSeg, Tag)
+    # В мете segments это список [enc, tag]. aliases это dict enc -> alias
+    # Нам нужно быстро по алиасу найти параметры для расшифровки
+    
+    # Создадим lookup для тегов сегментов
+    enc_seg_to_tag = {item[0]: item[1] for item in meta["encrypted_path_segments"]}
+    
+    for enc_seg, alias in meta["encrypted_path_segments_aliases"].items():
+        tag = enc_seg_to_tag.get(enc_seg)
+        if not tag:
+            logger.error(f"Integrity error: Alias {alias} has no tag in segments list")
+            continue
+        decrypted_segment = decrypt_str(key, enc_seg, tag)
+        alias_to_decrypted[alias] = decrypted_segment
 
-    assert os.path.isdir(
-        ENCRYPTED_ROOT_DIR
-    ), f'There is no root dir ("{ENCRYPTED_ROOT_DIR}")'
-    root_dir_name = decrypt_path(
-        ENCRYPTED_ROOT_DIR,
-        encrypted_path_segment_to_orig,
-        encrypted_path_segments_aliases,
-    )
-    if os.path.exists(root_dir_name):
-        backup_name = f"{root_dir_name}_backup_{time.strftime('%Y-%m-%d_%H:%M:%S')}"
-        logger.info(f'Found "{root_dir_name}", creating backup "{backup_name}".')
+    root_alias = meta.get("root_alias")
+    if not root_alias:
+        # Fallback для старых версий или если сломано, но лучше упасть
+        logger.error("Root alias not found in meta!")
+        exit(1)
 
-        import shutil
+    if not os.path.isdir(root_alias):
+        logger.error(f"Root encrypted directory '{root_alias}' not found. Are you in the right folder?")
+        sys.exit(1)
 
-        if os.path.isdir(root_dir_name):
-            shutil.copytree(root_dir_name, backup_name)
-        elif os.path.isfile(root_dir_name):
-            shutil.copy2(root_dir_name, backup_name)
-        else:
-            logger.error(
-                f"{root_dir_name} already exists. It has the same name as the root directory of decrypted data but it's not a file of directory. Remove or rename it."
-            )
-    for dirpath, subdirs, files in os.walk(ENCRYPTED_ROOT_DIR):
-        os.makedirs(
-            decrypt_path(
-                dirpath, encrypted_path_segment_to_orig, encrypted_path_segments_aliases
-            ),
-            exist_ok=True,
-        )
-        for subdir in subdirs:
-            full_path = os.path.join(dirpath, subdir)
-            os.makedirs(
-                decrypt_path(
-                    full_path,
-                    encrypted_path_segment_to_orig,
-                    encrypted_path_segments_aliases,
-                ),
-                exist_ok=True,
-            )
+    root_decrypted_name = alias_to_decrypted[root_alias]
+    
+    # Бэкап если существует
+    if os.path.exists(root_decrypted_name):
+        backup_name = f"{root_decrypted_name}_backup_{time.strftime('%Y%m%d_%H%M%S')}"
+        logger.warning(f"Output directory {root_decrypted_name} exists. Backing up to {backup_name}")
+        shutil.move(root_decrypted_name, backup_name)
+
+    for dirpath, subdirs, files in os.walk(root_alias):
+        # dirpath это путь из алиасов, например "0/5/2"
+        
+        # Восстанавливаем путь
+        path_parts = get_path_segments(dirpath)
+        try:
+            decrypted_parts = [alias_to_decrypted[p] for p in path_parts]
+        except KeyError as e:
+            logger.error(f"Unknown alias in path {dirpath}: {e}. Skipping.")
+            continue
+            
+        dest_dir = os.path.join(*decrypted_parts)
+        os.makedirs(dest_dir, exist_ok=True)
+        
         for file in files:
-            full_path = os.path.join(dirpath, file)
-            decrypted_path = decrypt_path(
-                full_path,
-                encrypted_path_segment_to_orig,
-                encrypted_path_segments_aliases,
-            )
-            tag = meta["encrypted_path_to_file_content_tag"].get(full_path, None)
-            if tag is None:
-                logger.error(
-                    f"Meta and actual files are incompatible. Can't find tag for path '{full_path}'. Decrypted path is '{decrypted_path}'. We have to skip this file."
-                )
-            else:
-                decrypt_file(key, bytes_from_base64(tag), full_path, decrypted_path)
+            encrypted_file_full_path = os.path.join(dirpath, file)
+            
+            # Расшифровываем имя файла
+            file_alias = file
+            if file_alias not in alias_to_decrypted:
+                 logger.warning(f"Unknown file alias {file_alias} in {dirpath}")
+                 continue
+            
+            decrypted_filename = alias_to_decrypted[file_alias]
+            dest_file_path = os.path.join(dest_dir, decrypted_filename)
+            
+            # Ищем тег контента
+            content_tag_b64 = meta["encrypted_path_to_file_content_tag"].get(encrypted_file_full_path)
+            if not content_tag_b64:
+                logger.warning(f"No content tag for {encrypted_file_full_path}. Skipping content.")
+                continue
+                
+            try:
+                decrypt_file(key, bytes_from_base64(content_tag_b64), encrypted_file_full_path, dest_file_path)
+            except Exception as e:
+                logger.error(f"Failed to decrypt file {dest_file_path}: {e}")
 
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="A script that encrypts a folder.")
-
-    parser.add_argument(
-        "--folder",
-        type=str,
-        required=False,
-        help="Path to the folder to encrypt",
-    )
-
-    parser.add_argument(
-        "--decrypt",
-        action="store_true",
-        help="Decrypt the folder instead of encrypting.",
-    )
-
-    parser.add_argument(
-        "--log_level",
-        type=str,
-        default="INFO",
-        choices=["INFO", "DEBUG"],
-        help="Logging level (default: INFO)",
-    )
-
-    return parser.parse_args()
-
+    logger.success("Decryption finished.")
 
 if __name__ == "__main__":
-    args = parse_arguments()
-    logger.info(args)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--folder", type=str, help="Folder to encrypt")
+    parser.add_argument("--decrypt", action="store_true", help="Decrypt mode")
+    args = parser.parse_args()
+
     logger.remove()
-    logger.add(sys.stderr, level=args.log_level)
-    logger.add(
-        f"file_{time.strftime('%Y-%m-%d')}.log", rotation="512Mb", level=args.log_level
-    )
-    logger.info(
-        "LOGS MAY CONTAIN VERY SENSITIVE INFORMATION. PLEASE, SECURE YOUR LOGS WELL"
-    )
+    logger.add(sys.stderr, level="INFO")
 
-    assert os.path.isfile(KEY_FILE), f'There is no "{KEY_FILE}" file'
-    if not args.decrypt:
-        assert os.path.isdir(args.folder), f'"{args.folder}" is not a directory'
+    if not os.path.exists(KEY_FILE):
+        logger.error(f"Key file '{KEY_FILE}' not found.")
+        sys.exit(1)
 
-    with open(KEY_FILE, "rb") as inp:
-        key = inp.read()
-        try:
-            AES.new(key, AES.MODE_SIV)
-        except Exception as e:
-            logger.exception(f'Key "{KEY_FILE}" is not ok.')
-            raise e
+    with open(KEY_FILE, "rb") as f:
+        key = f.read()
 
-    if not args.decrypt:
-        encrypt(key, args.folder)
-    else:
+    if args.decrypt:
         decrypt(key)
+    else:
+        if not args.folder:
+            logger.error("Provide --folder to encrypt")
+            sys.exit(1)
+        encrypt(key, args.folder)

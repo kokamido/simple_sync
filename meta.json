@@ -1,0 +1,55 @@
+{
+  "encrypted_path_segments": [
+    [
+      "s0Bl7p1yq72L8g==",
+      "z9VWJdF0fln3GvGVZAlWMQ=="
+    ],
+    [
+      "Xq7m",
+      "SZAOAtDH+eApfVgrLYLn6w=="
+    ],
+    [
+      "llKgmOO9",
+      "xFpm1Dzfmq7OcHeM9Mgsxw=="
+    ],
+    [
+      "7N0w8Q==",
+      "v9WiWFHD9Aaok/ak9COh/w=="
+    ],
+    [
+      "74JOBGAoVxBljfI=",
+      "f8SGBV/aSjZTuouUfoIbYA=="
+    ],
+    [
+      "aPs=",
+      "FjD/v43kMpqLUUiuN7uUnQ=="
+    ],
+    [
+      "1hPLuVYr",
+      "f41dGwjNB7bR6xQ9eK269Q=="
+    ],
+    [
+      "Y+se",
+      "6J8/LY3J479EVg87aqmpBg=="
+    ]
+  ],
+  "encrypted_path_segments_aliases": {
+    "74JOBGAoVxBljfI=": "0",
+    "Xq7m": "1",
+    "1hPLuVYr": "2",
+    "7N0w8Q==": "3",
+    "llKgmOO9": "4",
+    "s0Bl7p1yq72L8g==": "5",
+    "aPs=": "6",
+    "Y+se": "7"
+  },
+  "encrypted_path_to_file_content_tag": {
+    "0/1/2": "6hOCqD7iPtWm0MQfDTryDw==",
+    "0/1/3": "WYFfpiMvEVMjgsLoI9dUbw==",
+    "0/1/1/2": "gSjJBNlOsFl0yiSSawOlbQ==",
+    "0/4/5": "0Tp8fAU13qjMdsuhnxmMYg==",
+    "0/4/6/7": "7zbxrCNa/kcfS1VPomtrGA=="
+  },
+  "aes_key_hash": "717ff068651150313b4bd797c1f247d4dac1cb7b6555055c895a5dcfd6de882d",
+  "root_alias": "0"
+}
