@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import hashlib
+import hmac
 import shutil
 from loguru import logger
 from Cryptodome.Cipher import AES
@@ -16,8 +17,23 @@ META_FILE = "meta.json"
 def get_aes_key_hash(aes_key: bytes) -> str:
     return hashlib.sha256(aes_key).hexdigest()
 
+def compute_meta_hmac(aes_key: bytes, data: dict) -> str:
+    """Compute HMAC-SHA256 over meta content (excluding the hmac field itself)."""
+    payload = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return hmac.new(aes_key, payload, hashlib.sha256).hexdigest()
+
+def verify_meta_hmac(aes_key: bytes, meta: dict) -> bool:
+    """Verify HMAC of meta.json. Returns True if valid, False if tampered."""
+    stored_hmac = meta.pop("hmac", None)
+    if stored_hmac is None:
+        logger.warning("No HMAC in meta.json — file may be from an older version or tampered with")
+        return False
+    expected = compute_meta_hmac(aes_key, meta)
+    meta["hmac"] = stored_hmac  # restore for caller
+    return hmac.compare_digest(stored_hmac, expected)
+
 def write_meta(
-    encrypted_path_segments: list, # list of [alias, tag]
+    encrypted_path_segments: list, # list of [encrypted_segment_ciphertext, tag]
     encrypted_path_segments_aliases: dict[str, str],
     encrypted_path_to_file_content_tag: dict[str, str],
     aes_key: bytes,
@@ -31,7 +47,8 @@ def write_meta(
         "aes_key_hash": get_aes_key_hash(aes_key),
         "root_alias": root_alias
     }
-    
+    data["hmac"] = compute_meta_hmac(aes_key, data)
+
     with open(META_FILE, "w", encoding=BASE64_ENCODING) as out:
         json.dump(data, out, indent=2, ensure_ascii=False)
     logger.info("Writing meta finished")
@@ -102,7 +119,7 @@ def encrypt(key: bytes, source_dir: str):
     
     logger.info(f"Encrypting {source_dir}, relative to {parent_dir}")
 
-    encrypted_path_segments_set = set() # Using set to avoid duplicates
+    encrypted_path_segments_dict = {} # Using dict to avoid duplicates while preserving insertion order
     encrypted_path_to_file_content_tag = {}
     encrypted_path_segments_aliases = {} 
 
@@ -117,17 +134,24 @@ def encrypt(key: bytes, source_dir: str):
 
     def get_alias_for_segment(segment_str: str) -> str:
         enc_seg, tag = encrypt_str(key, segment_str)
-        encrypted_path_segments_set.add((enc_seg, tag))
+        encrypted_path_segments_dict[(enc_seg, tag)] = True
         
         if enc_seg not in encrypted_path_segments_aliases:
-            new_id = str(len(encrypted_path_segments_aliases))
+            if encrypted_path_segments_aliases:
+                new_id = str(max(int(v) for v in encrypted_path_segments_aliases.values()) + 1)
+            else:
+                new_id = "0"
             encrypted_path_segments_aliases[enc_seg] = new_id
             
         return encrypted_path_segments_aliases[enc_seg]
 
     root_folder_name = os.path.basename(source_dir)
     root_alias = get_alias_for_segment(root_folder_name)
-    
+
+    # Remove old encrypted directory to avoid stale files from deleted source files
+    if os.path.exists(root_alias):
+        shutil.rmtree(root_alias)
+
     os.makedirs(root_alias, exist_ok=True)
 
     for dirpath, subdirs, files in os.walk(source_dir):
@@ -152,7 +176,7 @@ def encrypt(key: bytes, source_dir: str):
             encrypted_path_to_file_content_tag[encrypted_file_path] = bytes_to_base64(tag)
 
     write_meta(
-        encrypted_path_segments=list(encrypted_path_segments_set),
+        encrypted_path_segments=sorted(encrypted_path_segments_dict.keys()),
         encrypted_path_segments_aliases=encrypted_path_segments_aliases,
         encrypted_path_to_file_content_tag=encrypted_path_to_file_content_tag,
         aes_key=key,
@@ -161,9 +185,15 @@ def encrypt(key: bytes, source_dir: str):
     logger.success(f"Encryption finished. Root alias is '{root_alias}'")
 
 
-def decrypt(key: bytes):
+def decrypt(key: bytes, strict: bool = False):
     meta = read_meta()
-    
+
+    if not verify_meta_hmac(key, meta):
+        logger.error("meta.json HMAC verification failed! File may be tampered with.")
+        sys.exit(1)
+
+    skipped_count = 0
+
     # Восстанавливаем обратный маппинг: Alias -> DecryptedString
     alias_to_decrypted = {}
     
@@ -178,6 +208,7 @@ def decrypt(key: bytes):
         tag = enc_seg_to_tag.get(enc_seg)
         if not tag:
             logger.error(f"Integrity error: Alias {alias} has no tag in segments list")
+            skipped_count += 1
             continue
         decrypted_segment = decrypt_str(key, enc_seg, tag)
         alias_to_decrypted[alias] = decrypted_segment
@@ -209,6 +240,7 @@ def decrypt(key: bytes):
             decrypted_parts = [alias_to_decrypted[p] for p in path_parts]
         except KeyError as e:
             logger.error(f"Unknown alias in path {dirpath}: {e}. Skipping.")
+            skipped_count += 1
             continue
             
         dest_dir = os.path.join(*decrypted_parts)
@@ -221,6 +253,7 @@ def decrypt(key: bytes):
             file_alias = file
             if file_alias not in alias_to_decrypted:
                  logger.warning(f"Unknown file alias {file_alias} in {dirpath}")
+                 skipped_count += 1
                  continue
             
             decrypted_filename = alias_to_decrypted[file_alias]
@@ -230,19 +263,30 @@ def decrypt(key: bytes):
             content_tag_b64 = meta["encrypted_path_to_file_content_tag"].get(encrypted_file_full_path)
             if not content_tag_b64:
                 logger.warning(f"No content tag for {encrypted_file_full_path}. Skipping content.")
+                skipped_count += 1
                 continue
-                
+
             try:
                 decrypt_file(key, bytes_from_base64(content_tag_b64), encrypted_file_full_path, dest_file_path)
+            except ValueError as e:
+                logger.error(f"MAC verification failed for {dest_file_path}: {e}. File may be tampered with!")
+                skipped_count += 1
             except Exception as e:
                 logger.error(f"Failed to decrypt file {dest_file_path}: {e}")
+                skipped_count += 1
 
+    if skipped_count > 0:
+        logger.warning(f"Decryption completed with {skipped_count} skipped item(s). Output may be incomplete!")
+        if strict:
+            logger.error("Strict mode: exiting with error due to skipped items.")
+            sys.exit(1)
     logger.success("Decryption finished.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--folder", type=str, help="Folder to encrypt")
     parser.add_argument("--decrypt", action="store_true", help="Decrypt mode")
+    parser.add_argument("--strict", action="store_true", help="Exit with error if any file is skipped during decryption")
     args = parser.parse_args()
 
     logger.remove()
@@ -255,8 +299,12 @@ if __name__ == "__main__":
     with open(KEY_FILE, "rb") as f:
         key = f.read()
 
+    if len(key) != 64:
+        logger.error(f"Key must be exactly 64 bytes (got {len(key)}). Generate with: openssl rand -out {KEY_FILE} 64")
+        sys.exit(1)
+
     if args.decrypt:
-        decrypt(key)
+        decrypt(key, strict=args.strict)
     else:
         if not args.folder:
             logger.error("Provide --folder to encrypt")

@@ -9,7 +9,7 @@ Simple tool useful for deterministic encryption of folders and files. It utilize
 # Dependencies
 
 * [python3](https://www.python.org/downloads/) and its standard library
-* [pycryptodome](https://github.com/Legrandin/pycryptodome/tree/master) for aes-siv implementation
+* [pycryptodomex](https://github.com/Legrandin/pycryptodome/tree/master) for aes-siv implementation (installed as `Cryptodome` namespace)
 * [loguru](https://github.com/Delgan/loguru) because I hate writing standard boilerplate code for logging in Python
 
 # Initial set up
@@ -32,9 +32,9 @@ pip install -r requirements.txt
 
 # How to use
 
-1. python encrypt.py --folder your_folder_to_encrypt
-2. store folder named "0" and file named "meta" somewhere
-3. python decrypt.py (it requires folder "0", file "meta" and your key in the file "aes_key")
+1. python3 encrypt.py --folder your_folder_to_encrypt
+2. store the encrypted folder (e.g. "0") and file named "meta.json" somewhere
+3. python3 encrypt.py --decrypt (it requires the encrypted folder, file "meta.json" and your key in the file "aes_key")
 
 You can find test data in this repo; "test_folder" is unencrypted directory, "0" and "meta" are the same data, but encrypted. 
 
@@ -79,6 +79,19 @@ For the sake of simplicity of my scenario I wrote a script that encrypts my data
 
 ./packer.sh push "directory to encrypt and push" "maybe commit message"
 
-./packer pull
+./packer.sh pull
 
 ```
+
+# Security Model
+
+## What is protected
+* File contents, file names, and folder names are encrypted with AES-SIV.
+* meta.json integrity is verified with HMAC-SHA256 — tampering is detected on decryption.
+
+## What is NOT protected (known limitations)
+* **Equality leakage**: AES-SIV is deterministic — identical plaintext always produces identical ciphertext. An observer can tell which files have identical content and which path segments repeat across the tree.
+* **Structure leakage**: Directory hierarchy shape, number of files, and file sizes are visible in the encrypted output.
+* **Key management**: The key is stored as a raw 64-byte file (`aes_key`). Anyone with filesystem read access obtains the key. Protect it with appropriate file permissions (`chmod 600 aes_key`) and consider full-disk encryption.
+* **Logs**: Log output to stderr may contain plaintext directory and file names. Do not redirect logs to persistent storage without protection.
+* **Large files**: AES-SIV requires the entire file in memory for MAC computation. Files larger than available RAM will cause failures.
